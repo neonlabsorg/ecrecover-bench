@@ -165,7 +165,7 @@ pub struct SyscallEcrecover {
 impl SyscallEcrecover {
     pub fn new() -> Self {
         SyscallEcrecover {
-            loader_id: Pubkey::from_str("3CMCRJieHS3sWWeovyFyH4iRyX4rHf3u2zbC5RCFrRex")
+            loader_id: Pubkey::from_str("Cj9ydNGWLePKRztuE3m3zT1uvj2We517k55vq2e65jtP")
                 .expect("Invalid Pubkey"),
         }
     }

@@ -17,7 +17,7 @@ pub struct Application {
         short,
         long,
         help = "Size of random buffer for keccak256",
-        default_value = "1048576"
+        default_value = "1024"
     )]
     pub size: usize,
 }

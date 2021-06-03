@@ -21,21 +21,21 @@ fn init_logger() {
     tracing_subscriber::fmt::init();
 }
 
-use std::time::Instant;
-use tracing::info;
-
 /// Dispatches CLI commands.
 fn execute(app: cli::Application) {
     keccak_bench(app.count, app.size);
-    ecrecover_bench(app.count);
+    ecrecover_bench(app.count, app.size);
 }
 
+use std::time::Instant;
+use tracing::{error, info};
+
 /// Runs the keccak benchmark.
-fn keccak_bench(count: usize, size: usize) {
-    info!("Preparing buffers...");
+fn keccak_bench(count: usize, message_size: usize) {
+    info!("Preparing {} buffers of {} bytes...", count, message_size);
     let mut buf: Vec<Vec<u8>> = Vec::with_capacity(count);
     for _ in 0..count {
-        buf.push((0..size).map(|_| rand::random::<u8>()).collect());
+        buf.push((0..message_size).map(|_| rand::random::<u8>()).collect());
     }
 
     info!(">Start keccak256...");
@@ -59,19 +59,26 @@ fn keccak_run(buf: &[u8]) {
 use crate::ecrecover::SyscallEcrecover;
 
 /// Runs the ecrecover benchmark.
-fn ecrecover_bench(count: usize) {
-    info!("Preparing buffers...");
-    let mut buf: Vec<Vec<u8>> = Vec::with_capacity(count);
+fn ecrecover_bench(count: usize, message_size: usize) {
+    use k256::ecdsa::{signature::Signer, Signature, SigningKey};
+    use rand_core::OsRng;
+
+    info!("Preparing {} signatures of 64 bytes...", count);
+    let signing_key = SigningKey::random(&mut OsRng);
+    let mut buf: Vec<Signature> = Vec::with_capacity(count);
     for _ in 0..count {
-        buf.push((0..64).map(|_| rand::random::<u8>()).collect());
+        let msg: Vec<_> = (0..message_size).map(|_| rand::random::<u8>()).collect();
+        let signature: Signature = signing_key.sign(&msg);
+        buf.push(signature);
     }
+
     let caller = SyscallEcrecover::new();
 
     info!(">Start ecrecover...");
 
     let now = Instant::now();
     for i in 0..count {
-        ecrecover_run(&caller, &buf[i]);
+        ecrecover_run(&caller, buf[i].as_ref());
     }
     let d = now.elapsed();
 
@@ -112,6 +119,7 @@ fn ecrecover_run(ecrecv: &SyscallEcrecover, buf: &[u8]) {
     );
 
     if let Err(err) = result {
-        tracing::error!("{:?}", err);
+        error!("{}", err);
+        panic!("{:?}", err);
     }
 }
