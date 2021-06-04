@@ -24,10 +24,10 @@ fn init_logger() {
 /// Dispatches CLI commands.
 fn execute(app: cli::Application) {
     let buffers = generate_buffers(app.count, app.size);
-    keccak_bench(&buffers);
+    let r = keccak_bench(&buffers);
 
     let signatures = generate_signatures(&buffers);
-    ecrecover_bench(&signatures);
+    ecrecover_bench(&signatures, r);
 }
 
 use std::time::Instant;
@@ -48,7 +48,7 @@ fn generate_buffers(count: usize, message_size: usize) -> Vec<Vec<u8>> {
 }
 
 /// Runs the keccak benchmark.
-fn keccak_bench(buffers: &Vec<Vec<u8>>) {
+fn keccak_bench(buffers: &Vec<Vec<u8>>) -> (f64, f64) {
     info!(">Start keccak256...");
 
     let now = Instant::now();
@@ -57,8 +57,16 @@ fn keccak_bench(buffers: &Vec<Vec<u8>>) {
     }
     let d = now.elapsed();
 
+    let nanos = d.as_nanos() as f64;
+    let sec = nanos / 1E9;
+    let n = buffers.len() as f64;
+    let average = sec / n;
+
     info!("Finish keccak256");
-    info!("Keccak ({}) elapsed {} sec.", buffers.len(), d.as_secs());
+    info!("Keccak ({} executions) elapsed {} s.", n, sec);
+    info!("Keccak average: {} s.", average);
+
+    (sec, average)
 }
 
 /// Executes single keccak256 call.
@@ -85,7 +93,7 @@ fn generate_signatures(buffers: &Vec<Vec<u8>>) -> Vec<Signature> {
 }
 
 /// Runs the ecrecover benchmark.
-fn ecrecover_bench(signatures: &Vec<Signature>) {
+fn ecrecover_bench(signatures: &Vec<Signature>, k: (f64, f64)) {
     let caller = SyscallEcrecover::new();
 
     info!(">Start ecrecover...");
@@ -96,12 +104,19 @@ fn ecrecover_bench(signatures: &Vec<Signature>) {
     }
     let d = now.elapsed();
 
+    let nanos = d.as_nanos() as f64;
+    let sec = nanos / 1E9;
+    let n = signatures.len() as f64;
+    let average = sec / n;
+
     info!("Finish ecrecover");
     info!(
-        "Ecrecover ({}) elapsed {} sec.",
-        signatures.len(),
-        d.as_secs()
+        "Ecrecover ({} executions) elapsed {} s. = {} K",
+        n,
+        sec,
+        sec / k.0
     );
+    info!("Ecrecover average: {} s. = {} K", average, average / k.1);
 }
 
 /// Executes single ecrecover call.

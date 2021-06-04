@@ -9,7 +9,7 @@ pub struct Application {
         short,
         long,
         help = "Number of iterations to call both functions",
-        default_value = "1000"
+        default_value = "10000"
     )]
     pub count: usize,
 
@@ -17,7 +17,7 @@ pub struct Application {
         short,
         long,
         help = "Size of random buffer for keccak256",
-        default_value = "1024"
+        default_value = "10000"
     )]
     pub size: usize,
 }
