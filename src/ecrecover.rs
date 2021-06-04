@@ -166,7 +166,7 @@ impl SyscallEcrecover {
     pub fn new() -> Self {
         SyscallEcrecover {
             loader_id: Pubkey::from_str("Cj9ydNGWLePKRztuE3m3zT1uvj2We517k55vq2e65jtP")
-                .expect("Invalid Pubkey"),
+                .expect("Invalid solana_sdk::pubkey::Pubkey from string"),
         }
     }
 

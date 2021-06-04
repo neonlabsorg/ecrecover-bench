@@ -23,103 +23,108 @@ fn init_logger() {
 
 /// Dispatches CLI commands.
 fn execute(app: cli::Application) {
-    keccak_bench(app.count, app.size);
-    ecrecover_bench(app.count, app.size);
+    let buffers = generate_buffers(app.count, app.size);
+    keccak_bench(&buffers);
+
+    let signatures = generate_signatures(&buffers);
+    ecrecover_bench(&signatures);
 }
 
 use std::time::Instant;
 use tracing::{error, info};
 
-/// Runs the keccak benchmark.
-fn keccak_bench(count: usize, message_size: usize) {
-    info!("Preparing {} buffers of {} bytes...", count, message_size);
-    let mut buf: Vec<Vec<u8>> = Vec::with_capacity(count);
-    for _ in 0..count {
-        buf.push((0..message_size).map(|_| rand::random::<u8>()).collect());
-    }
+/// Generates random data.
+fn generate_buffers(count: usize, message_size: usize) -> Vec<Vec<u8>> {
+    info!(
+        "Preparing {} buffers of {} bytes each...",
+        count, message_size
+    );
 
+    let mut buffers: Vec<Vec<u8>> = Vec::with_capacity(count);
+    for _ in 0..count {
+        buffers.push((0..message_size).map(|_| rand::random::<u8>()).collect());
+    }
+    buffers
+}
+
+/// Runs the keccak benchmark.
+fn keccak_bench(buffers: &Vec<Vec<u8>>) {
     info!(">Start keccak256...");
 
     let now = Instant::now();
-    for i in 0..count {
-        keccak_run(&buf[i]);
+    for b in buffers {
+        keccak_run(b);
     }
     let d = now.elapsed();
 
     info!("Finish keccak256");
-    info!("Keccak ({}) elapsed {} sec.", count, d.as_secs());
+    info!("Keccak ({}) elapsed {} sec.", buffers.len(), d.as_secs());
 }
 
-/// Executes one keccak256 call.
+/// Executes single keccak256 call.
 #[inline]
-fn keccak_run(buf: &[u8]) {
-    let _ = keccak::hash(buf);
+fn keccak_run(msg: &[u8]) {
+    let _ = keccak::hash(msg);
 }
 
 use crate::ecrecover::SyscallEcrecover;
+use k256::ecdsa::Signature;
 
-/// Runs the ecrecover benchmark.
-fn ecrecover_bench(count: usize, message_size: usize) {
-    use k256::ecdsa::{signature::Signer, Signature, SigningKey};
+/// Generates ECDSA signatures for the benchmark.
+fn generate_signatures(buffers: &Vec<Vec<u8>>) -> Vec<Signature> {
+    use k256::ecdsa::{signature::Signer, SigningKey};
     use rand_core::OsRng;
 
-    info!("Preparing {} signatures of 64 bytes...", count);
+    info!("Preparing {} signatures of 64 bytes...", buffers.len());
     let signing_key = SigningKey::random(&mut OsRng);
-    let mut buf: Vec<Signature> = Vec::with_capacity(count);
-    for _ in 0..count {
-        let msg: Vec<_> = (0..message_size).map(|_| rand::random::<u8>()).collect();
-        let signature: Signature = signing_key.sign(&msg);
-        buf.push(signature);
+    let mut signatures: Vec<Signature> = Vec::with_capacity(buffers.len());
+    for b in buffers {
+        signatures.push(signing_key.sign(b));
     }
+    signatures
+}
 
+/// Runs the ecrecover benchmark.
+fn ecrecover_bench(signatures: &Vec<Signature>) {
     let caller = SyscallEcrecover::new();
 
     info!(">Start ecrecover...");
 
     let now = Instant::now();
-    for i in 0..count {
-        ecrecover_run(&caller, buf[i].as_ref());
+    for s in signatures {
+        ecrecover_run(&caller, s.as_ref());
     }
     let d = now.elapsed();
 
     info!("Finish ecrecover");
-    info!("Ecrecover ({}) elapsed {} sec.", count, d.as_secs());
+    info!(
+        "Ecrecover ({}) elapsed {} sec.",
+        signatures.len(),
+        d.as_secs()
+    );
 }
 
-/// Executes one ecrecover call.
+/// Executes single ecrecover call.
 #[inline]
-fn ecrecover_run(ecrecv: &SyscallEcrecover, buf: &[u8]) {
+fn ecrecover_run(ecrecv: &SyscallEcrecover, signature: &[u8]) {
     use crate::ecrecover::BpfError;
     use solana_rbpf::error::EbpfError;
     use solana_rbpf::memory_region::{MemoryMapping, MemoryRegion};
     use solana_rbpf::vm::Config;
 
-    let hash_addr = 0_u64;
-    let recovery_id_val = 0_u64;
-    let signature_addr = 0_u64;
-    let result_addr = 0_u64;
-    let val_va = 0x1000;
-
     let config = Config::default();
     let memory_mapping = MemoryMapping::new::<BpfError>(
-        vec![MemoryRegion::new_from_slice(buf, val_va, 0, true)],
+        vec![MemoryRegion::new_from_slice(signature, 0, 0, true)],
         &config,
     )
     .unwrap();
-    let mut result: Result<u64, EbpfError<BpfError>> = Ok(0);
 
-    ecrecv.call(
-        hash_addr,
-        recovery_id_val,
-        signature_addr,
-        result_addr,
-        0,
-        &memory_mapping,
-        &mut result,
-    );
+    let mut result: Result<u64, EbpfError<BpfError>> = Ok(0);
+    ecrecv.call(0, 0, 0, 0, 0, &memory_mapping, &mut result);
 
     if let Err(err) = result {
         error!("{}", err);
         panic!("{:?}", err);
     }
+    assert_eq!(result.unwrap(), 0);
 }
