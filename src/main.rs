@@ -7,6 +7,7 @@ mod cli;
 mod ecrecover;
 mod keccak;
 mod sanitize;
+mod significant;
 
 fn main() {
     init_logger();
@@ -24,10 +25,10 @@ fn init_logger() {
 /// Dispatches CLI commands.
 fn execute(app: cli::Application) {
     let buffers = generate_buffers(app.count, app.size);
-    let r = keccak_bench(&buffers);
+    let k = keccak_bench(&buffers);
 
-    let signatures = generate_signatures(&buffers);
-    ecrecover_bench(&signatures, r);
+    let signatures = generate_signatures(buffers);
+    ecrecover_bench(signatures, k);
 }
 
 use std::time::Instant;
@@ -47,7 +48,7 @@ fn generate_buffers(count: usize, message_size: usize) -> Vec<Vec<u8>> {
     buffers
 }
 
-/// Runs the keccak benchmark.
+/// Runs the keccak benchmark and returns total and average elapsed time.
 fn keccak_bench(buffers: &Vec<Vec<u8>>) -> (f64, f64) {
     info!(">Start keccak256...");
 
@@ -58,19 +59,19 @@ fn keccak_bench(buffers: &Vec<Vec<u8>>) -> (f64, f64) {
     let d = now.elapsed();
 
     let nanos = d.as_nanos() as f64;
-    let sec = nanos / 1E9;
+    let total = nanos / 1E9;
     let n = buffers.len() as f64;
-    let average = sec / n;
+    let average = total / n;
 
     info!("Finish keccak256");
     info!(
         "Keccak ({} executions) elapsed {} s.",
         n,
-        significant(sec, 4)
+        significant::precision(total, 4)
     );
-    info!("Keccak average: {} s.", significant(average, 4));
+    info!("Keccak average: {} s.", significant::precision(average, 4));
 
-    (sec, average)
+    (total, average)
 }
 
 /// Executes single keccak256 call.
@@ -83,47 +84,47 @@ use crate::ecrecover::SyscallEcrecover;
 use k256::ecdsa::Signature;
 
 /// Generates ECDSA signatures for the benchmark.
-fn generate_signatures(buffers: &Vec<Vec<u8>>) -> Vec<Signature> {
+fn generate_signatures(buffers: Vec<Vec<u8>>) -> Vec<Signature> {
     use k256::ecdsa::{signature::Signer, SigningKey};
     use rand_core::OsRng;
 
     info!("Preparing {} signatures of 64 bytes...", buffers.len());
     let signing_key = SigningKey::random(&mut OsRng);
     let mut signatures: Vec<Signature> = Vec::with_capacity(buffers.len());
-    for b in buffers {
+    for b in &buffers {
         signatures.push(signing_key.sign(b));
     }
     signatures
 }
 
 /// Runs the ecrecover benchmark.
-fn ecrecover_bench(signatures: &Vec<Signature>, k: (f64, f64)) {
+fn ecrecover_bench(signatures: Vec<Signature>, k: (f64, f64)) {
     let caller = SyscallEcrecover::new();
 
     info!(">Start ecrecover...");
 
     let now = Instant::now();
-    for s in signatures {
+    for s in &signatures {
         ecrecover_run(&caller, s.as_ref());
     }
     let d = now.elapsed();
 
     let nanos = d.as_nanos() as f64;
-    let sec = nanos / 1E9;
+    let total = nanos / 1E9;
     let n = signatures.len() as f64;
-    let average = sec / n;
+    let average = total / n;
 
     info!("Finish ecrecover");
     info!(
         "Ecrecover ({} executions) elapsed {} s. = {} K",
         n,
-        significant(sec, 4),
-        significant(sec / k.0, 4)
+        significant::precision(total, 4),
+        significant::precision(total / k.0, 4)
     );
     info!(
         "Ecrecover average: {} s. = {} K",
-        significant(average, 4),
-        significant(average / k.1, 4)
+        significant::precision(average, 4),
+        significant::precision(average / k.1, 4)
     );
 }
 
@@ -150,32 +151,4 @@ fn ecrecover_run(ecrecv: &SyscallEcrecover, signature: &[u8]) {
         panic!("{:?}", err);
     }
     assert_eq!(result.unwrap(), 0);
-}
-
-/// Formats a float number with precision in the sense of number of significant digits.
-fn significant(float: f64, precision: usize) -> String {
-    // compute absolute value
-    let a = float.abs();
-
-    // if abs value is greater than 1, then precision becomes less than "standard"
-    let precision = if a >= 1. {
-        // reduce by number of digits, minimum 0
-        let n = (1. + a.log10().floor()) as usize;
-        if n <= precision {
-            precision - n
-        } else {
-            0
-        }
-        // if precision is less than 1 (but non-zero), then precision becomes greater than "standard"
-    } else if a > 0. {
-        // increase number of digits
-        let n = -(1. + a.log10().floor()) as usize;
-        precision + n
-        // special case for 0
-    } else {
-        0
-    };
-
-    // format with the given computed precision
-    format!("{0:.1$}", float, precision)
 }
