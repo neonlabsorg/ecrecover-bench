@@ -48,6 +48,8 @@ fn generate_buffers(count: usize, message_size: usize) -> Vec<Vec<u8>> {
     buffers
 }
 
+const PRECISION: usize = 4;
+
 /// Runs the keccak benchmark and returns total and average elapsed time.
 fn keccak_bench(buffers: &Vec<Vec<u8>>) -> (f64, f64) {
     info!(">Start keccak256...");
@@ -67,9 +69,12 @@ fn keccak_bench(buffers: &Vec<Vec<u8>>) -> (f64, f64) {
     info!(
         "Keccak ({} executions) elapsed {} s.",
         n,
-        significant::precision(total, 4)
+        significant::precision(total, PRECISION)
     );
-    info!("Keccak average: {} s.", significant::precision(average, 4));
+    info!(
+        "Keccak average: {} s.",
+        significant::precision(average, PRECISION)
+    );
 
     (total, average)
 }
@@ -118,13 +123,13 @@ fn ecrecover_bench(signatures: Vec<Signature>, k: (f64, f64)) {
     info!(
         "Ecrecover ({} executions) elapsed {} s. = {} K",
         n,
-        significant::precision(total, 4),
-        significant::precision(total / k.0, 4)
+        significant::precision(total, PRECISION),
+        significant::precision(total / k.0, PRECISION)
     );
     info!(
         "Ecrecover average: {} s. = {} K",
-        significant::precision(average, 4),
-        significant::precision(average / k.1, 4)
+        significant::precision(average, PRECISION),
+        significant::precision(average / k.1, PRECISION)
     );
 }
 

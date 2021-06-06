@@ -2,7 +2,7 @@
 
 use structopt::StructOpt;
 
-#[derive(StructOpt, Debug)]
+#[derive(StructOpt)]
 #[structopt(about = "Ecrecover benchmark")]
 pub struct Application {
     #[structopt(
