@@ -85,7 +85,7 @@ fn keccak_run(msg: &[u8]) {
     let _ = keccak::hash(msg);
 }
 
-use crate::ecrecover::SyscallEcrecover;
+use crate::ecrecover::{BpfError, SyscallEcrecover};
 use k256::ecdsa::Signature;
 
 /// Generates ECDSA signatures for the benchmark.
@@ -102,15 +102,18 @@ fn generate_signatures(buffers: Vec<Vec<u8>>) -> Vec<Signature> {
     signatures
 }
 
+use solana_rbpf::vm::Config;
+
 /// Runs the ecrecover benchmark.
 fn ecrecover_bench(signatures: Vec<Signature>, k: (f64, f64)) {
-    let caller = SyscallEcrecover::new();
-
     info!(">Start ecrecover...");
+
+    let caller = SyscallEcrecover::new();
+    let config = Config::default();
 
     let now = Instant::now();
     for s in &signatures {
-        ecrecover_run(&caller, s.as_ref());
+        ecrecover_run(&caller, &config, s.as_ref());
     }
     let d = now.elapsed();
 
@@ -135,19 +138,15 @@ fn ecrecover_bench(signatures: Vec<Signature>, k: (f64, f64)) {
 
 /// Executes single ecrecover call.
 #[inline]
-fn ecrecover_run(ecrecv: &SyscallEcrecover, signature: &[u8]) {
-    use crate::ecrecover::BpfError;
-    use solana_rbpf::error::EbpfError;
+fn ecrecover_run(ecrecv: &SyscallEcrecover, config: &Config, signature: &[u8]) {
     use solana_rbpf::memory_region::{MemoryMapping, MemoryRegion};
-    use solana_rbpf::vm::Config;
-
-    let config = Config::default();
     let memory_mapping = MemoryMapping::new::<BpfError>(
         vec![MemoryRegion::new_from_slice(signature, 0, 0, true)],
-        &config,
+        config,
     )
     .unwrap();
 
+    use solana_rbpf::error::EbpfError;
     let mut result: Result<u64, EbpfError<BpfError>> = Ok(0);
     ecrecv.call(0, 0, 0, 0, 0, &memory_mapping, &mut result);
 
