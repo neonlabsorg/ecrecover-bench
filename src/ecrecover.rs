@@ -170,6 +170,7 @@ impl SyscallEcrecover {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn call(
         &self,
         hash_addr: u64,

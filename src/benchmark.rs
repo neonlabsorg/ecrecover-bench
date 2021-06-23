@@ -30,7 +30,7 @@ fn generate_buffers(count: usize, message_size: usize) -> Vec<Vec<u8>> {
 const PRECISION: usize = 4;
 
 /// Runs the keccak benchmark and returns total and average elapsed time.
-fn keccak_bench(buffers: &Vec<Vec<u8>>) -> (f64, f64) {
+fn keccak_bench(buffers: &[Vec<u8>]) -> (f64, f64) {
     info!(">Start keccak256...");
 
     let now = Instant::now();
