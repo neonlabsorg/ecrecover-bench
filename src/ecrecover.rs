@@ -248,6 +248,7 @@ impl SyscallEcrecoverK256 {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn call(
         &self,
         hash_addr: u64,
@@ -284,8 +285,13 @@ impl SyscallEcrecoverK256 {
         let signature = ecdsa::Signature::from_bytes(signature).unwrap();
         let signature = k256::ecdsa::recoverable::Signature::new(&signature, id).unwrap();
 
-        let public_key = signature.recover_verify_key_from_digest_bytes(hash.into()).unwrap();
-        let bytes = public_key.to_encoded_point(false).to_untagged_bytes().unwrap();
+        let public_key = signature
+            .recover_verify_key_from_digest_bytes(hash.into())
+            .unwrap();
+        let bytes = public_key
+            .to_encoded_point(false)
+            .to_untagged_bytes()
+            .unwrap();
 
         ecrecover_result.copy_from_slice(&bytes);
         *result = Ok(0);
@@ -295,7 +301,7 @@ impl SyscallEcrecoverK256 {
 // Ecrecover
 pub struct SyscallEcrecoverSecp256k1 {
     loader_id: Pubkey,
-    context: secp256k1::Secp256k1::<secp256k1::VerifyOnly>
+    context: secp256k1::Secp256k1<secp256k1::VerifyOnly>,
 }
 
 impl SyscallEcrecoverSecp256k1 {
@@ -303,10 +309,11 @@ impl SyscallEcrecoverSecp256k1 {
         Self {
             loader_id: Pubkey::from_str("Cj9ydNGWLePKRztuE3m3zT1uvj2We517k55vq2e65jtP")
                 .expect("Invalid solana_sdk::pubkey::Pubkey from string"),
-            context: secp256k1::Secp256k1::verification_only()
+            context: secp256k1::Secp256k1::verification_only(),
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn call(
         &self,
         hash_addr: u64,
@@ -336,12 +343,12 @@ impl SyscallEcrecoverSecp256k1 {
             result
         );
 
-        let message =  secp256k1::Message::from_slice(hash).unwrap();
+        let message = secp256k1::Message::from_slice(hash).unwrap();
         let id = secp256k1::recovery::RecoveryId::from_i32(recovery_id_val as i32).unwrap();
-        let signature = secp256k1::recovery::RecoverableSignature::from_compact(signature, id).unwrap();
+        let signature =
+            secp256k1::recovery::RecoverableSignature::from_compact(signature, id).unwrap();
 
         let public_key = self.context.recover(&message, &signature).unwrap();
-
 
         ecrecover_result.copy_from_slice(&public_key.serialize_uncompressed()[1..65]);
         *result = Ok(0);

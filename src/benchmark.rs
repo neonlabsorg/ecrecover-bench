@@ -3,15 +3,19 @@
 /// Runs the benchmark.
 pub fn run(count: usize, size: usize) {
     let buffers = generate_buffers(count, size);
+    println!();
     let k = keccak_bench(&buffers);
 
     let signatures = generate_signatures(&buffers);
+    println!();
     ecrecover_bench_libsecp256k1(signatures, k);
 
     let signatures = generate_signatures(&buffers);
+    println!();
     ecrecover_bench_k256(signatures, k);
 
     let signatures = generate_signatures(&buffers);
+    println!();
     ecrecover_bench_secp256k1(signatures, k);
 }
 
@@ -70,7 +74,9 @@ fn keccak_run(msg: &[u8]) {
     let _ = keccak::hash(msg);
 }
 
-use crate::ecrecover::{BpfError, SyscallEcrecoverLibsecp256k1, SyscallEcrecoverK256, SyscallEcrecoverSecp256k1};
+use crate::ecrecover::{
+    BpfError, SyscallEcrecoverK256, SyscallEcrecoverLibsecp256k1, SyscallEcrecoverSecp256k1,
+};
 use k256::ecdsa::Signature;
 
 /// Generates ECDSA signatures for the benchmark.
@@ -187,7 +193,11 @@ fn ecrecover_bench_secp256k1(signatures: Vec<Signature>, k: (f64, f64)) {
 
 /// Executes single ecrecover call.
 #[inline]
-fn ecrecover_run_libsecp256k1(ecrecv: &SyscallEcrecoverLibsecp256k1, config: &Config, signature: &[u8]) {
+fn ecrecover_run_libsecp256k1(
+    ecrecv: &SyscallEcrecoverLibsecp256k1,
+    config: &Config,
+    signature: &[u8],
+) {
     use solana_rbpf::memory_region::{MemoryMapping, MemoryRegion};
     let memory_mapping = MemoryMapping::new::<BpfError>(
         vec![MemoryRegion::new_from_slice(signature, 0, 0, true)],
