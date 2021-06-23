@@ -3,20 +3,19 @@
 /// Runs the benchmark.
 pub fn run(count: usize, size: usize) {
     let buffers = generate_buffers(count, size);
+    let signatures = generate_signatures(&buffers);
+
     println!();
     let k = keccak_bench(&buffers);
 
-    let signatures = generate_signatures(&buffers);
     println!();
-    ecrecover_bench_libsecp256k1(signatures, k);
+    ecrecover_bench_libsecp256k1(&signatures, k);
 
-    let signatures = generate_signatures(&buffers);
     println!();
-    ecrecover_bench_k256(signatures, k);
+    ecrecover_bench_k256(&signatures, k);
 
-    let signatures = generate_signatures(&buffers);
     println!();
-    ecrecover_bench_secp256k1(signatures, k);
+    ecrecover_bench_secp256k1(&signatures, k);
 }
 
 use crate::{keccak, significant};
@@ -39,8 +38,8 @@ fn generate_buffers(count: usize, message_size: usize) -> Vec<Vec<u8>> {
 
 const PRECISION: usize = 4;
 
-/// Runs the keccak benchmark and returns total and average elapsed time.
-fn keccak_bench(buffers: &[Vec<u8>]) -> (f64, f64) {
+/// Runs the keccak benchmark and returns the average elapsed time.
+fn keccak_bench(buffers: &[Vec<u8>]) -> f64 {
     info!(">Start keccak256...");
 
     let now = Instant::now();
@@ -65,7 +64,7 @@ fn keccak_bench(buffers: &[Vec<u8>]) -> (f64, f64) {
         significant::precision(average, PRECISION)
     );
 
-    (total, average)
+    average
 }
 
 /// Executes single keccak256 call.
@@ -96,14 +95,14 @@ fn generate_signatures(buffers: &[Vec<u8>]) -> Vec<Signature> {
 use solana_rbpf::vm::Config;
 
 /// Runs the ecrecover benchmark.
-fn ecrecover_bench_libsecp256k1(signatures: Vec<Signature>, k: (f64, f64)) {
+fn ecrecover_bench_libsecp256k1(signatures: &[Signature], k: f64) {
     info!(">Start ecrecover libsecp256k1...");
 
     let caller = SyscallEcrecoverLibsecp256k1::new();
     let config = Config::default();
 
     let now = Instant::now();
-    for s in &signatures {
+    for s in signatures {
         ecrecover_run_libsecp256k1(&caller, &config, s.as_ref());
     }
     let d = now.elapsed();
@@ -115,27 +114,26 @@ fn ecrecover_bench_libsecp256k1(signatures: Vec<Signature>, k: (f64, f64)) {
 
     info!("Finish ecrecover libsecp256k1");
     info!(
-        "Ecrecover libsecp256k1 ({} executions) elapsed {} s. = {} K",
+        "Ecrecover libsecp256k1 ({} executions) elapsed {} s.",
         n,
-        significant::precision(total, PRECISION),
-        significant::precision(total / k.0, PRECISION)
+        significant::precision(total, PRECISION)
     );
     info!(
         "Ecrecover libsecp256k1 average: {} s. = {} K",
         significant::precision(average, PRECISION),
-        significant::precision(average / k.1, PRECISION)
+        significant::precision(average / k, PRECISION)
     );
 }
 
 /// Runs the ecrecover benchmark.
-fn ecrecover_bench_k256(signatures: Vec<Signature>, k: (f64, f64)) {
+fn ecrecover_bench_k256(signatures: &[Signature], k: f64) {
     info!(">Start ecrecover k256...");
 
     let caller = SyscallEcrecoverK256::new();
     let config = Config::default();
 
     let now = Instant::now();
-    for s in &signatures {
+    for s in signatures {
         ecrecover_run_k256(&caller, &config, s.as_ref());
     }
     let d = now.elapsed();
@@ -147,27 +145,26 @@ fn ecrecover_bench_k256(signatures: Vec<Signature>, k: (f64, f64)) {
 
     info!("Finish ecrecover k256");
     info!(
-        "Ecrecover k256 ({} executions) elapsed {} s. = {} K",
+        "Ecrecover k256 ({} executions) elapsed {} s.",
         n,
         significant::precision(total, PRECISION),
-        significant::precision(total / k.0, PRECISION)
     );
     info!(
         "Ecrecover k256 average: {} s. = {} K",
         significant::precision(average, PRECISION),
-        significant::precision(average / k.1, PRECISION)
+        significant::precision(average / k, PRECISION)
     );
 }
 
 /// Runs the ecrecover benchmark.
-fn ecrecover_bench_secp256k1(signatures: Vec<Signature>, k: (f64, f64)) {
+fn ecrecover_bench_secp256k1(signatures: &[Signature], k: f64) {
     info!(">Start ecrecover secp256k1...");
 
     let caller = SyscallEcrecoverSecp256k1::new();
     let config = Config::default();
 
     let now = Instant::now();
-    for s in &signatures {
+    for s in signatures {
         ecrecover_run_secp256k1(&caller, &config, s.as_ref());
     }
     let d = now.elapsed();
@@ -179,15 +176,14 @@ fn ecrecover_bench_secp256k1(signatures: Vec<Signature>, k: (f64, f64)) {
 
     info!("Finish ecrecover secp256k1");
     info!(
-        "Ecrecover secp256k1 ({} executions) elapsed {} s. = {} K",
+        "Ecrecover secp256k1 ({} executions) elapsed {} s.",
         n,
         significant::precision(total, PRECISION),
-        significant::precision(total / k.0, PRECISION)
     );
     info!(
         "Ecrecover secp256k1 average: {} s. = {} K",
         significant::precision(average, PRECISION),
-        significant::precision(average / k.1, PRECISION)
+        significant::precision(average / k, PRECISION)
     );
 }
 
