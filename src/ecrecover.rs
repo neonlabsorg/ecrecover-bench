@@ -158,13 +158,13 @@ fn translate_slice<'a, T>(
 }
 
 // Ecrecover
-pub struct SyscallEcrecover {
+pub struct SyscallEcrecoverLibsecp256k1 {
     loader_id: Pubkey,
 }
 
-impl SyscallEcrecover {
+impl SyscallEcrecoverLibsecp256k1 {
     pub fn new() -> Self {
-        SyscallEcrecover {
+        Self {
             loader_id: Pubkey::from_str("Cj9ydNGWLePKRztuE3m3zT1uvj2We517k55vq2e65jtP")
                 .expect("Invalid solana_sdk::pubkey::Pubkey from string"),
         }
@@ -225,12 +225,125 @@ impl SyscallEcrecover {
         let public_key = match libsecp256k1::recover(&message, &signature, &recovery_id) {
             Ok(key) => key.serialize(),
             Err(_) => {
-                *result = Ok(4);
+                *result = Ok(3);
                 return;
             }
         };
 
         ecrecover_result.copy_from_slice(&public_key[1..65]);
+        *result = Ok(0);
+    }
+}
+
+// Ecrecover
+pub struct SyscallEcrecoverK256 {
+    loader_id: Pubkey,
+}
+
+impl SyscallEcrecoverK256 {
+    pub fn new() -> Self {
+        Self {
+            loader_id: Pubkey::from_str("Cj9ydNGWLePKRztuE3m3zT1uvj2We517k55vq2e65jtP")
+                .expect("Invalid solana_sdk::pubkey::Pubkey from string"),
+        }
+    }
+
+    pub fn call(
+        &self,
+        hash_addr: u64,
+        recovery_id_val: u64,
+        signature_addr: u64,
+        result_addr: u64,
+        _arg5: u64,
+        memory_mapping: &MemoryMapping,
+        result: &mut Result<u64, EbpfError<BpfError>>,
+    ) {
+        let hash = question_mark!(
+            translate_slice::<u8>(
+                memory_mapping,
+                hash_addr,
+                keccak::HASH_BYTES as u64,
+                &self.loader_id,
+                true,
+            ),
+            result
+        );
+        let signature = question_mark!(
+            translate_slice::<u8>(memory_mapping, signature_addr, 64u64, &self.loader_id, true,),
+            result
+        );
+        let ecrecover_result = question_mark!(
+            translate_slice_mut::<u8>(memory_mapping, result_addr, 64u64, &self.loader_id, true,),
+            result
+        );
+
+        use ecdsa::signature::Signature;
+        use k256::elliptic_curve::sec1::ToEncodedPoint;
+
+        let id = k256::ecdsa::recoverable::Id::new(recovery_id_val as u8).unwrap();
+        let signature = ecdsa::Signature::from_bytes(signature).unwrap();
+        let signature = k256::ecdsa::recoverable::Signature::new(&signature, id).unwrap();
+
+        let public_key = signature.recover_verify_key_from_digest_bytes(hash.into()).unwrap();
+        let bytes = public_key.to_encoded_point(false).to_untagged_bytes().unwrap();
+
+        ecrecover_result.copy_from_slice(&bytes);
+        *result = Ok(0);
+    }
+}
+
+// Ecrecover
+pub struct SyscallEcrecoverSecp256k1 {
+    loader_id: Pubkey,
+    context: secp256k1::Secp256k1::<secp256k1::VerifyOnly>
+}
+
+impl SyscallEcrecoverSecp256k1 {
+    pub fn new() -> Self {
+        Self {
+            loader_id: Pubkey::from_str("Cj9ydNGWLePKRztuE3m3zT1uvj2We517k55vq2e65jtP")
+                .expect("Invalid solana_sdk::pubkey::Pubkey from string"),
+            context: secp256k1::Secp256k1::verification_only()
+        }
+    }
+
+    pub fn call(
+        &self,
+        hash_addr: u64,
+        recovery_id_val: u64,
+        signature_addr: u64,
+        result_addr: u64,
+        _arg5: u64,
+        memory_mapping: &MemoryMapping,
+        result: &mut Result<u64, EbpfError<BpfError>>,
+    ) {
+        let hash = question_mark!(
+            translate_slice::<u8>(
+                memory_mapping,
+                hash_addr,
+                keccak::HASH_BYTES as u64,
+                &self.loader_id,
+                true,
+            ),
+            result
+        );
+        let signature = question_mark!(
+            translate_slice::<u8>(memory_mapping, signature_addr, 64u64, &self.loader_id, true,),
+            result
+        );
+        let ecrecover_result = question_mark!(
+            translate_slice_mut::<u8>(memory_mapping, result_addr, 64u64, &self.loader_id, true,),
+            result
+        );
+
+        let message =  secp256k1::Message::from_slice(hash).unwrap();
+        let id = secp256k1::recovery::RecoveryId::from_i32(recovery_id_val as i32).unwrap();
+        let signature = secp256k1::recovery::RecoverableSignature::from_compact(signature, id).unwrap();
+
+        let public_key = self.context.recover(&message, &signature).unwrap();
+
+
+        ecrecover_result.copy_from_slice(&public_key.serialize_uncompressed()[1..65]);
         *result = Ok(0);
     }
 }

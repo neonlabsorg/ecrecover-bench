@@ -5,8 +5,14 @@ pub fn run(count: usize, size: usize) {
     let buffers = generate_buffers(count, size);
     let k = keccak_bench(&buffers);
 
-    let signatures = generate_signatures(buffers);
-    ecrecover_bench(signatures, k);
+    let signatures = generate_signatures(&buffers);
+    ecrecover_bench_libsecp256k1(signatures, k);
+
+    let signatures = generate_signatures(&buffers);
+    ecrecover_bench_k256(signatures, k);
+
+    let signatures = generate_signatures(&buffers);
+    ecrecover_bench_secp256k1(signatures, k);
 }
 
 use crate::{keccak, significant};
@@ -64,18 +70,18 @@ fn keccak_run(msg: &[u8]) {
     let _ = keccak::hash(msg);
 }
 
-use crate::ecrecover::{BpfError, SyscallEcrecover};
+use crate::ecrecover::{BpfError, SyscallEcrecoverLibsecp256k1, SyscallEcrecoverK256, SyscallEcrecoverSecp256k1};
 use k256::ecdsa::Signature;
 
 /// Generates ECDSA signatures for the benchmark.
-fn generate_signatures(buffers: Vec<Vec<u8>>) -> Vec<Signature> {
+fn generate_signatures(buffers: &[Vec<u8>]) -> Vec<Signature> {
     use k256::ecdsa::{signature::Signer, SigningKey};
     use rand_core::OsRng;
 
     info!("Preparing {} signatures of 64 bytes...", buffers.len());
     let signing_key = SigningKey::random(&mut OsRng);
     let mut signatures: Vec<Signature> = Vec::with_capacity(buffers.len());
-    for b in &buffers {
+    for b in buffers {
         signatures.push(signing_key.sign(b));
     }
     signatures
@@ -84,15 +90,15 @@ fn generate_signatures(buffers: Vec<Vec<u8>>) -> Vec<Signature> {
 use solana_rbpf::vm::Config;
 
 /// Runs the ecrecover benchmark.
-fn ecrecover_bench(signatures: Vec<Signature>, k: (f64, f64)) {
-    info!(">Start ecrecover...");
+fn ecrecover_bench_libsecp256k1(signatures: Vec<Signature>, k: (f64, f64)) {
+    info!(">Start ecrecover libsecp256k1...");
 
-    let caller = SyscallEcrecover::new();
+    let caller = SyscallEcrecoverLibsecp256k1::new();
     let config = Config::default();
 
     let now = Instant::now();
     for s in &signatures {
-        ecrecover_run(&caller, &config, s.as_ref());
+        ecrecover_run_libsecp256k1(&caller, &config, s.as_ref());
     }
     let d = now.elapsed();
 
@@ -101,15 +107,79 @@ fn ecrecover_bench(signatures: Vec<Signature>, k: (f64, f64)) {
     let n = signatures.len() as f64;
     let average = total / n;
 
-    info!("Finish ecrecover");
+    info!("Finish ecrecover libsecp256k1");
     info!(
-        "Ecrecover ({} executions) elapsed {} s. = {} K",
+        "Ecrecover libsecp256k1 ({} executions) elapsed {} s. = {} K",
         n,
         significant::precision(total, PRECISION),
         significant::precision(total / k.0, PRECISION)
     );
     info!(
-        "Ecrecover average: {} s. = {} K",
+        "Ecrecover libsecp256k1 average: {} s. = {} K",
+        significant::precision(average, PRECISION),
+        significant::precision(average / k.1, PRECISION)
+    );
+}
+
+/// Runs the ecrecover benchmark.
+fn ecrecover_bench_k256(signatures: Vec<Signature>, k: (f64, f64)) {
+    info!(">Start ecrecover k256...");
+
+    let caller = SyscallEcrecoverK256::new();
+    let config = Config::default();
+
+    let now = Instant::now();
+    for s in &signatures {
+        ecrecover_run_k256(&caller, &config, s.as_ref());
+    }
+    let d = now.elapsed();
+
+    let nanos = d.as_nanos() as f64;
+    let total = nanos / 1E9;
+    let n = signatures.len() as f64;
+    let average = total / n;
+
+    info!("Finish ecrecover k256");
+    info!(
+        "Ecrecover k256 ({} executions) elapsed {} s. = {} K",
+        n,
+        significant::precision(total, PRECISION),
+        significant::precision(total / k.0, PRECISION)
+    );
+    info!(
+        "Ecrecover k256 average: {} s. = {} K",
+        significant::precision(average, PRECISION),
+        significant::precision(average / k.1, PRECISION)
+    );
+}
+
+/// Runs the ecrecover benchmark.
+fn ecrecover_bench_secp256k1(signatures: Vec<Signature>, k: (f64, f64)) {
+    info!(">Start ecrecover secp256k1...");
+
+    let caller = SyscallEcrecoverSecp256k1::new();
+    let config = Config::default();
+
+    let now = Instant::now();
+    for s in &signatures {
+        ecrecover_run_secp256k1(&caller, &config, s.as_ref());
+    }
+    let d = now.elapsed();
+
+    let nanos = d.as_nanos() as f64;
+    let total = nanos / 1E9;
+    let n = signatures.len() as f64;
+    let average = total / n;
+
+    info!("Finish ecrecover secp256k1");
+    info!(
+        "Ecrecover secp256k1 ({} executions) elapsed {} s. = {} K",
+        n,
+        significant::precision(total, PRECISION),
+        significant::precision(total / k.0, PRECISION)
+    );
+    info!(
+        "Ecrecover secp256k1 average: {} s. = {} K",
         significant::precision(average, PRECISION),
         significant::precision(average / k.1, PRECISION)
     );
@@ -117,7 +187,49 @@ fn ecrecover_bench(signatures: Vec<Signature>, k: (f64, f64)) {
 
 /// Executes single ecrecover call.
 #[inline]
-fn ecrecover_run(ecrecv: &SyscallEcrecover, config: &Config, signature: &[u8]) {
+fn ecrecover_run_libsecp256k1(ecrecv: &SyscallEcrecoverLibsecp256k1, config: &Config, signature: &[u8]) {
+    use solana_rbpf::memory_region::{MemoryMapping, MemoryRegion};
+    let memory_mapping = MemoryMapping::new::<BpfError>(
+        vec![MemoryRegion::new_from_slice(signature, 0, 0, true)],
+        config,
+    )
+    .unwrap();
+
+    use solana_rbpf::error::EbpfError;
+    let mut result: Result<u64, EbpfError<BpfError>> = Ok(0);
+    ecrecv.call(0, 0, 0, 0, 0, &memory_mapping, &mut result);
+
+    if let Err(err) = result {
+        error!("{}", err);
+        panic!("{:?}", err);
+    }
+    assert_eq!(result.unwrap(), 0);
+}
+
+/// Executes single ecrecover call.
+#[inline]
+fn ecrecover_run_k256(ecrecv: &SyscallEcrecoverK256, config: &Config, signature: &[u8]) {
+    use solana_rbpf::memory_region::{MemoryMapping, MemoryRegion};
+    let memory_mapping = MemoryMapping::new::<BpfError>(
+        vec![MemoryRegion::new_from_slice(signature, 0, 0, true)],
+        config,
+    )
+    .unwrap();
+
+    use solana_rbpf::error::EbpfError;
+    let mut result: Result<u64, EbpfError<BpfError>> = Ok(0);
+    ecrecv.call(0, 0, 0, 0, 0, &memory_mapping, &mut result);
+
+    if let Err(err) = result {
+        error!("{}", err);
+        panic!("{:?}", err);
+    }
+    assert_eq!(result.unwrap(), 0);
+}
+
+/// Executes single ecrecover call.
+#[inline]
+fn ecrecover_run_secp256k1(ecrecv: &SyscallEcrecoverSecp256k1, config: &Config, signature: &[u8]) {
     use solana_rbpf::memory_region::{MemoryMapping, MemoryRegion};
     let memory_mapping = MemoryMapping::new::<BpfError>(
         vec![MemoryRegion::new_from_slice(signature, 0, 0, true)],
